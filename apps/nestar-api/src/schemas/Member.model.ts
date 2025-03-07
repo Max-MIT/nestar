@@ -3,7 +3,7 @@ import { MemberAuthType, MemberStatus, MemberType } from '../libs/enums/member.e
 
 const MemberSchema = new Schema(
 	{
-		memberTupe: {
+		memberType: {
 			type: String,
 			enum: MemberType,
 			default: MemberType.USER,
