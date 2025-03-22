@@ -11,7 +11,6 @@ import { ViewService } from '../view/view.service';
 import { ViewGroup } from '../../libs/enums/view.enum';
 import { T } from '../../libs/types/common';
 
-
 @Injectable()
 export class MemberService {
 	constructor(
@@ -63,7 +62,7 @@ export class MemberService {
 				{ new: true },
 			)
 			.exec();
-		if (!result) throw new InternalServerErrorException(Message.UPLOAD_FAILED);
+		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 
 		result.accessToken = await this.authService.createToken(result);
 		return result;
@@ -148,7 +147,9 @@ export class MemberService {
 	}
 
 	public async updateMemberByAdmin(input: MemberUpdate): Promise<Member> {
-		const result: Member | null = await this.memberModel.findOneAndUpdate({ _id: input._id }, input, { new: true }).exec();
+		const result: Member | null = await this.memberModel
+			.findOneAndUpdate({ _id: input._id }, input, { new: true })
+			.exec();
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 		return result;
 	}
