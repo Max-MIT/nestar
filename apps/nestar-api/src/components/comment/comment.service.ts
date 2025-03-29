@@ -63,15 +63,15 @@ export class CommentService {
 	public async updateComment(memberId: ObjectId, input: CommentUpdate): Promise<Comment> {
 		const { _id } = input;
 		const result = await this.commentModel.findOneAndUpdate(
-			{ 
-              _id: _id, 
-              memberId: memberId, 
-              commentStatus: CommentStatus.ACTIVE 
-            },
+			{
+				_id: _id,
+				memberId: memberId,
+				commentStatus: CommentStatus.ACTIVE,
+			},
 			input,
-			{ 
-                new: true 
-            },
+			{
+				new: true,
+			},
 		);
 		if (!result) throw new BadRequestException(Message.UPDATE_FAILED);
 		return result;
@@ -82,7 +82,8 @@ export class CommentService {
 		const match: T = { commentRefId: commentRefId, commentStatus: CommentStatus.ACTIVE };
 		const sort: T = { [input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC };
 
-		const result: Comments[] = await this.commentModel.aggregate([
+		const result: Comments[] = await this.commentModel
+			.aggregate([
 				{ $match: match },
 				{ $sort: sort },
 				{
@@ -90,7 +91,7 @@ export class CommentService {
 						list: [
 							{ $skip: (input.page - 1) * input.limit },
 							{ $limit: input.limit },
-                            // meLiked
+							// meLiked
 							lookupMember,
 							{ $unwind: '$memberData' },
 						],
@@ -103,5 +104,11 @@ export class CommentService {
 		if (!result.length) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
 
 		return result[0];
+	}
+
+	public async removeCommentByAdmin(input: ObjectId): Promise<Comment> {
+		const result = await this.commentModel.findByIdAndDelete(input);
+		if (!result) throw new InternalServerErrorException(Message.REMOVE_FAILED);
+		return result;
 	}
 }
