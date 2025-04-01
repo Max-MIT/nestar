@@ -54,7 +54,7 @@ export class CommentResolver {
     @Roles(MemberType.ADMIN)
 	@UseGuards(RolesGuard)
 	@Mutation((returns) => Comment)
-	public async removeCommentByAdmin(@Args('commentID') input: string): Promise<Comment> {
+	public async removeCommentByAdmin(@Args('commentId') input: string): Promise<Comment> {
 		console.log('Mutation: removeCommentByAdmin');
 		const commnetID = shapeIntoMongoObjectId(input);
 		return await this.commentService.removeCommentByAdmin(commnetID);
