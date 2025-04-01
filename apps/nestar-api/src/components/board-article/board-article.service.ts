@@ -4,13 +4,20 @@ import { Model, ObjectId } from 'mongoose';
 import { BoardArticle, BoardArticles } from '../../libs/dto/board-article/board-article';
 import { MemberService } from '../member/member.service';
 import { ViewService } from '../view/view.service';
-import { AllBoardArticlesInquiry, BoardArticleInput, BoardArticlesInquiry } from '../../libs/dto/board-article/board-article.input';
+import {
+	AllBoardArticlesInquiry,
+	BoardArticleInput,
+	BoardArticlesInquiry,
+} from '../../libs/dto/board-article/board-article.input';
 import { Direction, Message } from '../../libs/enums/common.enum';
 import { StatisticModifier, T } from '../../libs/types/common';
 import { BoardArticleStatus } from '../../libs/enums/board-article.enum';
 import { ViewGroup } from '../../libs/enums/view.enum';
 import { BoardArticleUpdate } from '../../libs/dto/board-article/board-article.update';
 import { lookupMember, shapeIntoMongoObjectId } from '../../libs/config';
+import { LikeInput } from '../../libs/dto/like/like.input';
+import { LikeGroup } from '../../libs/enums/like.enum';
+import { LikeService } from '../like/like.service';
 
 @Injectable()
 export class BoardArticleService {
@@ -18,6 +25,7 @@ export class BoardArticleService {
 		@InjectModel('BoardArticle') private readonly boardArticleModel: Model<BoardArticle>,
 		private readonly memberService: MemberService,
 		private readonly viewService: ViewService,
+		private readonly likeService: LikeService,
 	) {}
 
 	public async createBoardArticle(memberId: ObjectId, input: BoardArticleInput): Promise<BoardArticle> {
@@ -104,7 +112,7 @@ export class BoardArticleService {
 						list: [
 							{ $skip: (input.page - 1) * input.limit },
 							{ $limit: input.limit },
-                            // meLiked
+							// meLiked
 							lookupMember,
 							{ $unwind: '$memberData' },
 						],
@@ -114,8 +122,33 @@ export class BoardArticleService {
 			])
 			.exec();
 		if (!result.length) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
-		
-        return result[0];
+
+		return result[0];
+	}
+
+	public async likeTargetBoardArticle(memberId: ObjectId, likeRefId: ObjectId): Promise<BoardArticle> {
+		const target: BoardArticle | null = await this.boardArticleModel
+			.findOne({ _id: likeRefId, articleStatus: BoardArticleStatus.ACTIVE })
+			.exec();
+		if (!target) {
+			throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+		}
+
+		const input: LikeInput = {
+			memberId: memberId,
+			likeRefId: likeRefId,
+			likeGroup: LikeGroup.ARTICLE,
+		};
+
+		const modifier: number = await this.likeService.toggleLike(input);
+		const result = await this.boardArticleStatsEditor({
+			_id: likeRefId,
+			targetKey: 'articleLikes',
+			modifier: modifier,
+		});
+
+		if (!result) throw new InternalServerErrorException(Message.SOMETHING_WENT_WRONG);
+		return result;
 	}
 
 	public async getAllBoardArticlesByAdmin(input: AllBoardArticlesInquiry): Promise<BoardArticles> {
@@ -144,17 +177,17 @@ export class BoardArticleService {
 			])
 			.exec();
 		if (!result.length) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
-		
-        return result[0];
+
+		return result[0];
 	}
 
 	public async updateBoardArticleByAdmin(input: BoardArticleUpdate): Promise<BoardArticle> {
 		const { _id, articleStatus } = input;
 
 		const result = await this.boardArticleModel
-			.findOneAndUpdate({ _id: _id, articleStatus: BoardArticleStatus.ACTIVE }, input, { 
-                new: true 
-            })
+			.findOneAndUpdate({ _id: _id, articleStatus: BoardArticleStatus.ACTIVE }, input, {
+				new: true,
+			})
 			.exec();
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 
