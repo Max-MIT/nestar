@@ -4,11 +4,13 @@ const FollowSchema = new Schema(
 	{
 		followingId: {
 			type: Schema.Types.ObjectId,
+			ref: 'Member',
 			required: true,
 		},
 
 		followerId: {
 			type: Schema.Types.ObjectId,
+			ref: 'Member',
 			required: true,
 		},
 	},
