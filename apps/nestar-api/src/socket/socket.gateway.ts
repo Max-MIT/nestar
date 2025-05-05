@@ -2,21 +2,31 @@ import { Logger } from '@nestjs/common';
 import { OnGatewayInit, SubscribeMessage, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Server } from 'ws';
 import * as WebSocket from 'ws';
+import { AuthService } from '../components/auth/auth.service';
+import { Member } from '../libs/dto/member/member';
+import * as url from 'url';
 
 interface MessagePayload {
 	event: string;
 	text: string;
+	memberData: Member | null;
 }
 
 interface InfoPayload {
 	event: string;
 	totalClients: number;
+	memberData: Member | null;
+	action: string;
 }
 
 @WebSocketGateway({ transports: ['websocket'], secure: false })
 export class SocketGateway implements OnGatewayInit {
-	private logger: Logger = new Logger('SocketEventsGetway');
+	private logger: Logger = new Logger('SocketEventsGateway');
 	private summaryClient: number = 0;
+	private clientsAuthMap = new Map<WebSocket, Member | null>();
+	private messagesList: MessagePayload[] = [];
+
+	constructor(private authService: AuthService) {}
 
 	@WebSocketServer()
 	server: Server;
@@ -25,24 +35,48 @@ export class SocketGateway implements OnGatewayInit {
 		this.logger.verbose(`WebSocket Server Initialized & total [${this.summaryClient}]`);
 	}
 
-	handleConnection(client: WebSocket, ...args: any[]) {
-		this.summaryClient++;
-		this.logger.verbose(`Connection & total [${this.summaryClient}] `);
-
-		const infoMsg: InfoPayload = {
-			event: 'info',
-			totalClients: this.summaryClient,
-		};
-		this.emitMesage(infoMsg);
+	private async retrieveAuth(req: any): Promise<Member | null> {
+		try {
+			const parseUrl = url.parse(req.url, true);
+			const { token } = parseUrl.query;
+			console.log('token:', token);
+			return await this.authService.verifyToken(token as string);
+		} catch (err) {
+			return null;
+		}
 	}
 
-	handleDisconnect(client: WebSocket) {
-		this.summaryClient--;
-		this.logger.verbose(`Disconnection & total [${this.summaryClient}] `);
+	public async handleConnection(client: WebSocket, req: any) {
+		const authMember = await this.retrieveAuth(req);
+		this.summaryClient++;
+		this.clientsAuthMap.set(client, authMember);
+
+		const clientNick: string = authMember?.memberNick ?? 'Guest';
+		this.logger.verbose(`Connection [${clientNick}] & total [${this.summaryClient}] `);
 
 		const infoMsg: InfoPayload = {
 			event: 'info',
 			totalClients: this.summaryClient,
+			memberData: authMember,
+			action: 'joined',
+		};
+		this.emitMessage(infoMsg);
+		// CLIENT MESSAGES
+		client.send(JSON.stringify({ event: 'getMessages', list: this.messagesList }));
+	}
+
+	public handleDisconnect(client: WebSocket) {
+		const authMember = this.clientsAuthMap.get(client) as Member | null;
+		this.summaryClient--;
+		this.clientsAuthMap.delete(client);
+		const clientNick: string = authMember?.memberNick ?? 'Guest';
+		this.logger.verbose(`Disconnection [${clientNick}] & total [${this.summaryClient}] `);
+
+		const infoMsg: InfoPayload = {
+			event: 'info',
+			totalClients: this.summaryClient,
+			memberData: authMember,
+			action: 'left',
 		};
 		// client - disconnect
 		this.broadcastMessage(client, infoMsg);
@@ -50,10 +84,15 @@ export class SocketGateway implements OnGatewayInit {
 
 	@SubscribeMessage('message')
 	public async handleMessage(client: WebSocket, payload: string): Promise<void> {
-		const newMessage: MessagePayload = { event: 'message', text: payload };
+		const authMember = this.clientsAuthMap.get(client) as Member | null;
+		const newMessage: MessagePayload = { event: 'message', text: payload, memberData: authMember };
 
-		this.logger.verbose(`NEW MESSAGE: ${payload}`);
-		this.emitMesage(newMessage);
+		const clientNick: string = authMember?.memberNick ?? 'Guest';
+		this.logger.verbose(`NEW MESSAGE [${clientNick}]: ${payload}`);
+		this.messagesList.push(newMessage);
+
+		this.emitMessage(newMessage);
+		if (this.messagesList.length > 5) this.messagesList.splice(0, this.messagesList.length - 5);
 	}
 
 	private broadcastMessage(sender: WebSocket, message: InfoPayload | MessagePayload) {
@@ -64,7 +103,7 @@ export class SocketGateway implements OnGatewayInit {
 		});
 	}
 
-	private emitMesage(message: InfoPayload | MessagePayload) {
+	private emitMessage(message: InfoPayload | MessagePayload) {
 		this.server.clients.forEach((client) => {
 			if (client.readyState === WebSocket.OPEN) {
 				client.send(JSON.stringify(message));
@@ -72,3 +111,10 @@ export class SocketGateway implements OnGatewayInit {
 		});
 	}
 }
+
+/*
+MESSAGE TARGETS:
+1. Client (only client)
+2. Broadcast (except client)
+3. Emit (all clients)
+*/
